@@ -7,6 +7,7 @@ add_library( myslam SHARED
     g2o_types.cpp
     tracking.cpp
     ORBextractor.cc
+    pnpsolver.cpp
 )
 
 target_link_libraries( myslam

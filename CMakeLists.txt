@@ -2,7 +2,7 @@ cmake_minimum_required( VERSION 2.8 )
 project ( myslam )
 
 set( CMAKE_CXX_COMPILER "g++" )
-set( CMAKE_BUILD_TYPE "DEBUG" )
+set( CMAKE_BUILD_TYPE "Release" )
 set( CMAKE_CXX_FLAGS "-g -ggdb -std=c++11 -march=native -O3 -pthread" )
 
 list( APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules )

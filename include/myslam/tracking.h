@@ -23,6 +23,8 @@
 #include "myslam/common_include.h"
 #include "myslam/map.h"
 #include "myslam/ORBextractor.h"
+#include "myslam/pnpsolver.h"
+
 #include <mutex>
 #include <thread>
 
@@ -42,6 +44,7 @@ public:
     
     TrackState     state_;     // current VO status
     Map::Ptr    map_;       // map with all frames and map points
+    PnPSolver::Ptr pnpsolver_;
     
     Frame::Ptr  ref_;       // reference key-frame 
     Frame::Ptr  curr_;      // current frame 

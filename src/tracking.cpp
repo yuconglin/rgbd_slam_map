@@ -23,15 +23,23 @@
 #include <algorithm>
 #include <boost/timer.hpp>
 
+#include <g2o/core/base_vertex.h>
+#include <g2o/core/base_unary_edge.h>
+#include <g2o/core/block_solver.h>
+#include <g2o/core/optimization_algorithm_levenberg.h>
+#include <g2o/types/sba/types_six_dof_expmap.h>
+#include <g2o/solvers/dense/linear_solver_dense.h>
+#include <g2o/core/robust_kernel.h>
+#include <g2o/core/robust_kernel_impl.h>
+
 #include "myslam/config.h"
 #include "myslam/tracking.h"
-#include "myslam/g2o_types.h"
 
 namespace myslam
 {
 
 Tracking::Tracking(Map::Ptr map) :
-    state_ ( INITIALIZING ), ref_ ( nullptr ), curr_ ( nullptr ), map_ ( map ), num_lost_ ( 0 ), num_inliers_ ( 0 ), matcher_flann_ ( new cv::flann::LshIndexParams ( 5,10,2 ) )
+    state_ ( INITIALIZING ), ref_ ( nullptr ), curr_ ( nullptr ), map_ ( map ), pnpsolver_ (new PnPSolver), num_lost_ ( 0 ), num_inliers_ ( 0 ), matcher_flann_ ( new cv::flann::LshIndexParams ( 5,10,2 ) )
 {
     num_of_features_    = Config::get<int> ( "number_of_features" );
     scale_factor_       = Config::get<double> ( "scale_factor" );
@@ -50,7 +58,7 @@ Tracking::Tracking(Map::Ptr map) :
 }
 
 Tracking::Tracking() :
-    state_ ( INITIALIZING ), ref_ ( nullptr ), curr_ ( nullptr ), map_ (new Map), num_lost_ ( 0 ), num_inliers_ ( 0 ), matcher_flann_ ( new cv::flann::LshIndexParams ( 5,10,2 ) )
+    state_ ( INITIALIZING ), ref_ ( nullptr ), curr_ ( nullptr ), map_ (new Map), pnpsolver_ (new PnPSolver), num_lost_ ( 0 ), num_inliers_ ( 0 ), matcher_flann_ ( new cv::flann::LshIndexParams ( 5,10,2 ) )
 {
     num_of_features_    = Config::get<int> ( "number_of_features" );
     scale_factor_       = Config::get<double> ( "scale_factor" );
@@ -183,6 +191,7 @@ void Tracking::featureMatching()
 
 void Tracking::poseEstimationPnP()
 {
+    boost::timer timer;
     // construct the 3d 2d observations
     vector<cv::Point3f> pts3d;
     vector<cv::Point2f> pts2d;
@@ -197,20 +206,10 @@ void Tracking::poseEstimationPnP()
         pts3d.push_back( pt->getPositionCV() );
         mappoint_ids.push_back( pt->id_ );
     }
-
-    Mat K = ( cv::Mat_<double> ( 3,3 ) <<
-              ref_->camera_->fx_, 0, ref_->camera_->cx_,
-              0, ref_->camera_->fy_, ref_->camera_->cy_,
-              0,0,1
-            );
-    Mat rvec, tvec, inliers;
-    cv::solvePnPRansac ( pts3d, pts2d, K, Mat(), rvec, tvec, false, 100, 4.0, 0.99, inliers );
-    num_inliers_ = inliers.rows;
-    cout<<"pnp inliers: "<<num_inliers_<<endl;
-    T_c_w_estimated_ = SE3 (
-                           SO3 ( rvec.at<double> ( 0,0 ), rvec.at<double> ( 1,0 ), rvec.at<double> ( 2,0 ) ),
-                           Vector3d ( tvec.at<double> ( 0,0 ), tvec.at<double> ( 1,0 ), tvec.at<double> ( 2,0 ) )
-                       );
+   
+    vector<int> inliersIndex;
+    pnpsolver_->solvePnP(pts2d, pts3d, curr_->camera_, inliersIndex, T_c_w_estimated_);
+    num_inliers_ = inliersIndex.size();
 
     // using bundle adjustment to optimize the pose
     typedef g2o::BlockSolver<g2o::BlockSolverTraits<6,3>> Block;
@@ -236,11 +235,11 @@ void Tracking::poseEstimationPnP()
     optimizer.addVertex ( pose );
 
     // vertex for points
-    for (int i=0; i<inliers.rows; i++)
+    for (int i=0; i<inliersIndex.size(); i++)
     {
         g2o::VertexSBAPointXYZ* point = new g2o::VertexSBAPointXYZ();
         point->setId(i+1);
-        int index = inliers.at<int> ( i,0 );
+        int index = inliersIndex[i];
         cv::Point3f p = pts3d[index];
         point->setEstimate(Eigen::Vector3d(p.x, p.y, p.z));
         point->setMarginalized(true);
@@ -248,9 +247,9 @@ void Tracking::poseEstimationPnP()
     }
 
     // edges
-    for ( int i=0; i<inliers.rows; i++ )
+    for ( int i=0; i<inliersIndex.size(); i++ )
     {
-        int index = inliers.at<int> ( i,0 );
+        int index = inliersIndex[i];
         // 3D -> 2D projection
         g2o::EdgeProjectXYZ2UV* edge = new g2o::EdgeProjectXYZ2UV();
         edge->setId ( i );
@@ -277,15 +276,16 @@ void Tracking::poseEstimationPnP()
     // points
     {
         //unique_lock<mutex> lck(map_mutex);
-        for (int i = 0; i < inliers.rows; i++)
+        for (int i = 0; i < inliersIndex.size(); i++)
         {
             g2o::VertexSBAPointXYZ *point = static_cast<g2o::VertexSBAPointXYZ *>(optimizer.vertex(i + 1));
             Vector3d pt = point->estimate();
-            long id = mappoint_ids[inliers.at<int> ( i,0 )];
+            long id = mappoint_ids[ inliersIndex[i] ];
             map_->map_points_[id]->pos_ = pt;
         }
     }
-    cout << inliers.rows << " map_points updated\n";
+    cout << inliersIndex.size() << " map_points updated\n";
+    cout<<"pnp estimation cost time: "<<timer.elapsed() <<endl;
 }
 
 bool Tracking::checkEstimatedPose()
