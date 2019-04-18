@@ -27,6 +27,7 @@
 
 #include <mutex>
 #include <thread>
+#include <fstream>
 
 #include <opencv2/features2d/features2d.hpp>
 
@@ -44,6 +45,7 @@ public:
     
     TrackState     state_;     // current VO status
     Map::Ptr    map_;       // map with all frames and map points
+    Map::Ptr    local_map_; // only a local map
     PnPSolver::Ptr pnpsolver_;
     
     Frame::Ptr  ref_;       // reference key-frame 
@@ -98,6 +100,9 @@ protected:
     double getViewAngle( Frame::Ptr frame, MapPoint::Ptr point );
     
     mutex map_mutex;
+
+    //writing
+    ofstream output_file;
 };
 }
 

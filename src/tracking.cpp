@@ -21,6 +21,7 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 #include <algorithm>
+#include <iomanip>
 #include <boost/timer.hpp>
 
 #include <g2o/core/base_vertex.h>
@@ -39,7 +40,7 @@ namespace myslam
 {
 
 Tracking::Tracking(Map::Ptr map) :
-    state_ ( INITIALIZING ), ref_ ( nullptr ), curr_ ( nullptr ), map_ ( map ), pnpsolver_ (new PnPSolver), num_lost_ ( 0 ), num_inliers_ ( 0 ), matcher_flann_ ( new cv::flann::LshIndexParams ( 5,10,2 ) )
+    state_ ( INITIALIZING ), ref_ ( nullptr ), curr_ ( nullptr ), map_ ( map ), local_map_ (new Map), pnpsolver_ (new PnPSolver), num_lost_ ( 0 ), num_inliers_ ( 0 ), matcher_flann_ ( new cv::flann::LshIndexParams ( 5,10,2 ) )
 {
     num_of_features_    = Config::get<int> ( "number_of_features" );
     scale_factor_       = Config::get<double> ( "scale_factor" );
@@ -55,10 +56,11 @@ Tracking::Tracking(Map::Ptr map) :
     map_point_erase_ratio_ = Config::get<double> ( "map_point_erase_ratio" );
 
     orb_ = new ORB_SLAM2::ORBextractor(num_of_features_, scale_factor_, level_pyramid_, ini_fast_thres_, min_fast_thres_);
+    output_file.open(Config::get<string>("trajectory_file"));
 }
 
 Tracking::Tracking() :
-    state_ ( INITIALIZING ), ref_ ( nullptr ), curr_ ( nullptr ), map_ (new Map), pnpsolver_ (new PnPSolver), num_lost_ ( 0 ), num_inliers_ ( 0 ), matcher_flann_ ( new cv::flann::LshIndexParams ( 5,10,2 ) )
+    state_ ( INITIALIZING ), ref_ ( nullptr ), curr_ ( nullptr ), map_ (new Map), local_map_ (new Map), pnpsolver_ (new PnPSolver), num_lost_ ( 0 ), num_inliers_ ( 0 ), matcher_flann_ ( new cv::flann::LshIndexParams ( 5,10,2 ) )
 {
     num_of_features_    = Config::get<int> ( "number_of_features" );
     scale_factor_       = Config::get<double> ( "scale_factor" );
@@ -74,12 +76,13 @@ Tracking::Tracking() :
     map_point_erase_ratio_ = Config::get<double> ( "map_point_erase_ratio" );
 
     orb_ = new ORB_SLAM2::ORBextractor(num_of_features_, scale_factor_, level_pyramid_, ini_fast_thres_, min_fast_thres_);
-    //opencv_orb_ = cv::ORB::create ( num_of_features_, scale_factor_, level_pyramid_ );
+    output_file.open(Config::get<string>("trajectory_file"));
 }
 
 Tracking::~Tracking()
 {
     delete orb_;
+    output_file.close();
 }
 
 bool Tracking::addFrame ( Frame::Ptr frame )
@@ -272,7 +275,15 @@ void Tracking::poseEstimationPnP()
         pose->estimate().rotation(),
         pose->estimate().translation()
     );
-    cout<<"T_c_w_estimated_: "<<endl<<T_c_w_estimated_.matrix()<<endl;
+    //cout<<"T_c_w_estimated_: "<<endl<<T_c_w_estimated_.matrix()<<endl;
+
+    Vector3d trans = T_c_w_estimated_.translation();
+    Quaterniond quat = T_c_w_estimated_.unit_quaternion();
+    output_file << fixed << std::setprecision(4) 
+    << curr_->time_stamp_
+    << ' ' << trans(0) << ' ' << trans(1) << ' ' << trans(2)
+    << ' ' << quat.x() << ' ' << quat.y() << ' ' << quat.z()
+    << ' ' << quat.w() << '\n';
     // points
     {
         //unique_lock<mutex> lck(map_mutex);
@@ -338,6 +349,7 @@ void Tracking::addKeyFrame()
                 p_world, n, descriptors_curr_.row(i).clone(), curr_.get()
             );
             map_->insertMapPoint( map_point );
+            curr_->map_points_.push_back(map_point.get());
         }
     }
     
@@ -368,6 +380,7 @@ void Tracking::addMapPoints()
             MapPoint::Ptr map_point = MapPoint::createMapPoint(
                 p_world, n, descriptors_curr_.row(i).clone(), curr_.get());
             map_->insertMapPoint(map_point);
+            curr_->map_points_.push_back(map_point.get());
         }
     }
 }
@@ -381,12 +394,14 @@ void Tracking::optimizeMap()
         if ( !curr_->isInFrame(iter->second->pos_) )
         {
             iter = map_->map_points_.erase(iter);
+            // need to also remove from keyframe's sets
             continue;
         }
         float match_ratio = float(iter->second->matched_times_)/iter->second->visible_times_;
         if ( match_ratio < map_point_erase_ratio_ )
         {
             iter = map_->map_points_.erase(iter);
+            // need to also remove from keyframe's sets
             continue;
         }
         
@@ -394,6 +409,7 @@ void Tracking::optimizeMap()
         if ( angle > M_PI/6. )
         {
             iter = map_->map_points_.erase(iter);
+            // need to also remove from keyframe's sets
             continue;
         }
         if ( iter->second->good_ == false )
