@@ -95,7 +95,6 @@ bool Tracking::addFrame ( Frame::Ptr frame )
         curr_ = ref_ = frame;
         // extract features from first frame and add them into map
         extractKeyPoints();
-        //computeDescriptors();
         addKeyFrame();      // the first frame is a key-frame
         break;
     }
@@ -104,7 +103,6 @@ bool Tracking::addFrame ( Frame::Ptr frame )
         curr_ = frame;
         curr_->T_c_w_ = ref_->T_c_w_;
         extractKeyPoints();
-        //computeDescriptors();
         featureMatching();
         poseEstimationPnP();
         if ( checkEstimatedPose() == true ) // a good estimation
@@ -156,7 +154,7 @@ void Tracking::featureMatching()
     // select the candidates in map 
     Mat desp_map;
     vector<MapPoint::Ptr> candidate;
-    for ( auto& point: map_->map_points_ )
+    for ( auto& point: local_map_->map_points_ )
     {
         MapPoint::Ptr& p = point.second;
         // check if p in curr frame image 
@@ -292,6 +290,7 @@ void Tracking::poseEstimationPnP()
             g2o::VertexSBAPointXYZ *point = static_cast<g2o::VertexSBAPointXYZ *>(optimizer.vertex(i + 1));
             Vector3d pt = point->estimate();
             long id = mappoint_ids[ inliersIndex[i] ];
+            //local_map_ should also get changed.
             map_->map_points_[id]->pos_ = pt;
         }
     }
@@ -349,10 +348,11 @@ void Tracking::addKeyFrame()
                 p_world, n, descriptors_curr_.row(i).clone(), curr_.get()
             );
             map_->insertMapPoint( map_point );
+            local_map_->insertMapPoint( map_point );
             curr_->map_points_.push_back(map_point.get());
         }
     }
-    
+    //local_map_ may not need to insert a frame
     map_->insertKeyFrame ( curr_ );
     ref_ = curr_;
 }
@@ -380,6 +380,7 @@ void Tracking::addMapPoints()
             MapPoint::Ptr map_point = MapPoint::createMapPoint(
                 p_world, n, descriptors_curr_.row(i).clone(), curr_.get());
             map_->insertMapPoint(map_point);
+            local_map_->insertMapPoint(map_point);
             curr_->map_points_.push_back(map_point.get());
         }
     }
@@ -389,18 +390,18 @@ void Tracking::optimizeMap()
 {
     // remove the hardly seen and no visible points 
     //unique_lock<mutex> lck(map_mutex);
-    for ( auto iter = map_->map_points_.begin(); iter != map_->map_points_.end(); )
+    for ( auto iter = local_map_->map_points_.begin(); iter != local_map_->map_points_.end(); )
     {
         if ( !curr_->isInFrame(iter->second->pos_) )
         {
-            iter = map_->map_points_.erase(iter);
+            iter = local_map_->map_points_.erase(iter);
             // need to also remove from keyframe's sets
             continue;
         }
         float match_ratio = float(iter->second->matched_times_)/iter->second->visible_times_;
         if ( match_ratio < map_point_erase_ratio_ )
         {
-            iter = map_->map_points_.erase(iter);
+            iter = local_map_->map_points_.erase(iter);
             // need to also remove from keyframe's sets
             continue;
         }
@@ -408,7 +409,7 @@ void Tracking::optimizeMap()
         double angle = getViewAngle( curr_, iter->second );
         if ( angle > M_PI/6. )
         {
-            iter = map_->map_points_.erase(iter);
+            iter = local_map_->map_points_.erase(iter);
             // need to also remove from keyframe's sets
             continue;
         }
@@ -422,14 +423,15 @@ void Tracking::optimizeMap()
     
     if ( match_2dkp_index_.size()<100 )
         addMapPoints();
-    if ( map_->map_points_.size() > 1000 )  
+    if ( local_map_->map_points_.size() > 1000 )  
     {
         // TODO map is too large, remove some one 
         map_point_erase_ratio_ += 0.05;
     }
     else 
         map_point_erase_ratio_ = 0.1;
-    cout<<"map points: "<<map_->map_points_.size()<<endl;
+    cout<<"local map points: "<< local_map_->map_points_.size()<<endl;
+    cout << "global map points: " << map_->map_points_.size() << '\n';
 }
 
 double Tracking::getViewAngle ( Frame::Ptr frame, MapPoint::Ptr point )

@@ -19,9 +19,9 @@ int main ( int argc, char** argv )
 
     myslam::Config::setParameterFile ( argv[1] );
 
-    //myslam::Map::Ptr map(new myslam::Map);
+    myslam::Map::Ptr map(new myslam::Map);
     //myslam::Tracking::Ptr vo ( new myslam::Tracking(map) );
-    myslam::Tracking::Ptr vo ( new myslam::Tracking );
+    myslam::Tracking::Ptr vo ( new myslam::Tracking(map) );
 
     string dataset_dir = myslam::Config::get<string> ( "dataset_dir" );
     cout<<"dataset: "<<dataset_dir<<endl;
@@ -69,8 +69,10 @@ int main ( int argc, char** argv )
         cout<<"****** loop "<<i<<" ******"<<endl;
         Mat color = cv::imread ( rgb_files[i] );
         Mat depth = cv::imread ( depth_files[i], -1 );
-        if ( color.data==nullptr || depth.data==nullptr )
+        if ( color.data==nullptr || depth.data==nullptr ) {
+            cout << "xxxxxxxxxxxxxx no more data xxxxxxxxxxx \n";
             break;
+        }
         myslam::Frame::Ptr pFrame = myslam::Frame::createFrame();
         pFrame->camera_ = camera;
         pFrame->color_ = color;
@@ -100,7 +102,7 @@ int main ( int argc, char** argv )
         
 
         Mat img_show = color.clone();
-        for ( auto& pt:vo->map_->map_points_ )
+        for ( auto& pt:vo->local_map_->map_points_ )
         {
             myslam::MapPoint::Ptr p = pt.second;
             Vector2d pixel = pFrame->camera_->world2pixel ( p->pos_, pFrame->T_c_w_ );
