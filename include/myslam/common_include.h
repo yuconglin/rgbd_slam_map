@@ -27,6 +27,7 @@
 #include <Eigen/Geometry>
 using Eigen::Vector2d;
 using Eigen::Vector3d;
+using namespace Eigen;
 
 // for Sophus
 #include <sophus/se3.h>
@@ -47,6 +48,7 @@ using cv::Mat;
 #include <set>
 #include <unordered_map>
 #include <map>
+#include <mutex>
 
 using namespace std; 
 #endif

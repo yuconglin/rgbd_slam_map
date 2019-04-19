@@ -24,7 +24,8 @@ namespace myslam
 
 void Map::insertKeyFrame ( Frame::Ptr frame )
 {
-    cout<<"Key frame size = "<<keyframes_.size()<<endl;
+    //cout<<"Key frame size = "<<keyframes_.size()<<endl;
+    //unique_lock<mutex> lock(mutex_map_);
     if ( keyframes_.find(frame->id_) == keyframes_.end() )
     {
         keyframes_.insert( make_pair(frame->id_, frame) );
@@ -37,15 +38,52 @@ void Map::insertKeyFrame ( Frame::Ptr frame )
 
 void Map::insertMapPoint ( MapPoint::Ptr map_point )
 {
+    //unique_lock<mutex> lock(mutex_map_);
     if ( map_points_.find(map_point->id_) == map_points_.end() )
     {
         map_points_.insert( make_pair(map_point->id_, map_point) );
+        reference_map_points_.insert( make_pair(map_point->id_, map_point) );
     }
     else 
     {
         map_points_[map_point->id_] = map_point;
+        reference_map_points_[map_point->id_] = map_point;
     }
 }
 
+void Map::UpdateReferenceMap(Frame::Ptr curr_, double map_point_erase_ratio_)
+{
+    //unique_lock<mutex> lock(mutex_map_);
+    for (auto iter = reference_map_points_.begin(); iter != reference_map_points_.end();)
+    {
+        if ( !curr_->isInFrame(iter->second->pos_) )
+        {
+            iter = reference_map_points_.erase(iter);
+            continue;
+        }
+        float match_ratio = float(iter->second->matched_times_)/ iter->second->visible_times_;
+        if ( match_ratio < map_point_erase_ratio_ )
+        {
+            iter = reference_map_points_.erase(iter);
+            continue;
+        }
+        
+        Vector3d n = iter->second->pos_ - curr_->getCamCenter();
+        n.normalize();
+        double angle = acos( n.transpose()* iter->second->norm_ );
+        if ( angle > M_PI/6. )
+        {
+            iter = reference_map_points_.erase(iter);
+            // need to also remove from keyframe's sets
+            continue;
+        }
+        if ( iter->second->good_ == false )
+        {
+	        std::cout << "bad mappoint" << "\n";
+            // TODO try triangulate this map point 
+        }
+        iter++;
+    }
+}
 
 }

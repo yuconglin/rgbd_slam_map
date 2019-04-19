@@ -40,7 +40,7 @@ namespace myslam
 {
 
 Tracking::Tracking(Map::Ptr map) :
-    state_ ( INITIALIZING ), ref_ ( nullptr ), curr_ ( nullptr ), map_ ( map ), local_map_ (new Map), pnpsolver_ (new PnPSolver), num_lost_ ( 0 ), num_inliers_ ( 0 ), matcher_flann_ ( new cv::flann::LshIndexParams ( 5,10,2 ) )
+    state_ ( INITIALIZING ), ref_ ( nullptr ), curr_ ( nullptr ), local_mapping_ (nullptr), map_ ( map ), pnpsolver_ (new PnPSolver), num_lost_ ( 0 ), num_inliers_ ( 0 ), matcher_flann_ ( new cv::flann::LshIndexParams ( 5,10,2 ) )
 {
     num_of_features_    = Config::get<int> ( "number_of_features" );
     scale_factor_       = Config::get<double> ( "scale_factor" );
@@ -60,7 +60,7 @@ Tracking::Tracking(Map::Ptr map) :
 }
 
 Tracking::Tracking() :
-    state_ ( INITIALIZING ), ref_ ( nullptr ), curr_ ( nullptr ), map_ (new Map), local_map_ (new Map), pnpsolver_ (new PnPSolver), num_lost_ ( 0 ), num_inliers_ ( 0 ), matcher_flann_ ( new cv::flann::LshIndexParams ( 5,10,2 ) )
+    state_ ( INITIALIZING ), ref_ ( nullptr ), curr_ ( nullptr ), local_mapping_ (nullptr), map_ (new Map), pnpsolver_ (new PnPSolver), num_lost_ ( 0 ), num_inliers_ ( 0 ), matcher_flann_ ( new cv::flann::LshIndexParams ( 5,10,2 ) )
 {
     num_of_features_    = Config::get<int> ( "number_of_features" );
     scale_factor_       = Config::get<double> ( "scale_factor" );
@@ -154,16 +154,15 @@ void Tracking::featureMatching()
     // select the candidates in map 
     Mat desp_map;
     vector<MapPoint::Ptr> candidate;
-    for ( auto& point: local_map_->map_points_ )
+    for ( auto &p : map_->reference_map_points_)
     {
-        MapPoint::Ptr& p = point.second;
         // check if p in curr frame image 
-        if ( curr_->isInFrame(p->pos_) )
+        if ( curr_->isInFrame(p.second->pos_) )
         {
             // add to candidate 
-            p->visible_times_++;
-            candidate.push_back( p );
-            desp_map.push_back( p->descriptor_ );
+            p.second->visible_times_++;
+            candidate.push_back( p.second );
+            desp_map.push_back( p.second->descriptor_ );
         }
     }
     
@@ -284,13 +283,12 @@ void Tracking::poseEstimationPnP()
     << ' ' << quat.w() << '\n';
     // points
     {
-        //unique_lock<mutex> lck(map_mutex);
+        //unique_lock<mutex> lck(map_->mutex_map_);
         for (int i = 0; i < inliersIndex.size(); i++)
         {
             g2o::VertexSBAPointXYZ *point = static_cast<g2o::VertexSBAPointXYZ *>(optimizer.vertex(i + 1));
             Vector3d pt = point->estimate();
             long id = mappoint_ids[ inliersIndex[i] ];
-            //local_map_ should also get changed.
             map_->map_points_[id]->pos_ = pt;
         }
     }
@@ -330,31 +328,30 @@ bool Tracking::checkKeyFrame()
 
 void Tracking::addKeyFrame()
 {
-    //unique_lock<mutex> lck(map_mutex);
-    if ( map_->keyframes_.empty() )
     {
-        // first key-frame, add all 3d points into map
-        for ( size_t i=0; i<keypoints_curr_.size(); i++ )
+        //unique_lock<mutex> lck(map_->mutex_map_);
+        if (map_->keyframes_.empty())
         {
-            double d = curr_->findDepth ( keypoints_curr_[i] );
-            if ( d < 0 ) 
-                continue;
-            Vector3d p_world = ref_->camera_->pixel2world (
-                Vector2d ( keypoints_curr_[i].pt.x, keypoints_curr_[i].pt.y ), curr_->T_c_w_, d
-            );
-            Vector3d n = p_world - ref_->getCamCenter();
-            n.normalize();
-            MapPoint::Ptr map_point = MapPoint::createMapPoint(
-                p_world, n, descriptors_curr_.row(i).clone(), curr_.get()
-            );
-            map_->insertMapPoint( map_point );
-            local_map_->insertMapPoint( map_point );
-            curr_->map_points_.push_back(map_point.get());
+            // first key-frame, add all 3d points into map
+            for (size_t i = 0; i < keypoints_curr_.size(); i++)
+            {
+                double d = curr_->findDepth(keypoints_curr_[i]);
+                if (d < 0)
+                    continue;
+                Vector3d p_world = ref_->camera_->pixel2world(
+                    Vector2d(keypoints_curr_[i].pt.x, keypoints_curr_[i].pt.y), curr_->T_c_w_, d);
+                Vector3d n = p_world - ref_->getCamCenter();
+                n.normalize();
+                MapPoint::Ptr map_point = MapPoint::createMapPoint(
+                    p_world, n, descriptors_curr_.row(i).clone(), curr_.get());
+                map_->insertMapPoint(map_point);
+                curr_->map_points_.push_back(map_point.get());
+            }
         }
+        map_->insertKeyFrame(curr_);
     }
-    //local_map_ may not need to insert a frame
-    map_->insertKeyFrame ( curr_ );
     ref_ = curr_;
+    local_mapping_->InsertKeyFrame(curr_);
 }
 
 void Tracking::addMapPoints()
@@ -365,13 +362,12 @@ void Tracking::addMapPoints()
         matched[index] = true;
     {
         //unique_lock<mutex> lck(map_mutex);
-        for (int i = 0; i < keypoints_curr_.size(); i++)
+        for (int i = 0; i < keypoints_curr_.size(); ++ i)
         {
-            if (matched[i] == true)
-                continue;
             double d = ref_->findDepth(keypoints_curr_[i]);
-            if (d < 0)
+            if (d < 0) {
                 continue;
+            }
             Vector3d p_world = ref_->camera_->pixel2world(
                 Vector2d(keypoints_curr_[i].pt.x, keypoints_curr_[i].pt.y),
                 curr_->T_c_w_, d);
@@ -379,8 +375,9 @@ void Tracking::addMapPoints()
             n.normalize();
             MapPoint::Ptr map_point = MapPoint::createMapPoint(
                 p_world, n, descriptors_curr_.row(i).clone(), curr_.get());
-            map_->insertMapPoint(map_point);
-            local_map_->insertMapPoint(map_point);
+            if (!matched[i]) {
+                map_->insertMapPoint(map_point);
+            }
             curr_->map_points_.push_back(map_point.get());
         }
     }
@@ -388,49 +385,19 @@ void Tracking::addMapPoints()
 
 void Tracking::optimizeMap()
 {
-    // remove the hardly seen and no visible points 
-    //unique_lock<mutex> lck(map_mutex);
-    for ( auto iter = local_map_->map_points_.begin(); iter != local_map_->map_points_.end(); )
-    {
-        if ( !curr_->isInFrame(iter->second->pos_) )
-        {
-            iter = local_map_->map_points_.erase(iter);
-            // need to also remove from keyframe's sets
-            continue;
-        }
-        float match_ratio = float(iter->second->matched_times_)/iter->second->visible_times_;
-        if ( match_ratio < map_point_erase_ratio_ )
-        {
-            iter = local_map_->map_points_.erase(iter);
-            // need to also remove from keyframe's sets
-            continue;
-        }
-        
-        double angle = getViewAngle( curr_, iter->second );
-        if ( angle > M_PI/6. )
-        {
-            iter = local_map_->map_points_.erase(iter);
-            // need to also remove from keyframe's sets
-            continue;
-        }
-        if ( iter->second->good_ == false )
-        {
-	    std::cout << "bad mappoint" << "\n";
-            // TODO try triangulate this map point 
-        }
-        iter++;
-    }
+    //update reference map points according to current keyframe
+    map_->UpdateReferenceMap(curr_, map_point_erase_ratio_);
     
-    if ( match_2dkp_index_.size()<100 )
-        addMapPoints();
-    if ( local_map_->map_points_.size() > 1000 )  
+    //if ( match_2dkp_index_.size()<100 )
+    addMapPoints();
+    if ( map_->reference_map_points_.size() > 1000 )  
     {
         // TODO map is too large, remove some one 
         map_point_erase_ratio_ += 0.05;
     }
     else 
         map_point_erase_ratio_ = 0.1;
-    cout<<"local map points: "<< local_map_->map_points_.size()<<endl;
+    cout<<"local map points: "<< map_->reference_map_points_.size()<<endl;
     cout << "global map points: " << map_->map_points_.size() << '\n';
 }
 

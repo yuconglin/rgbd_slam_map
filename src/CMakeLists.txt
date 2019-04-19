@@ -8,6 +8,7 @@ add_library( myslam SHARED
     tracking.cpp
     ORBextractor.cc
     pnpsolver.cpp
+    localmapping.cpp
 )
 
 target_link_libraries( myslam

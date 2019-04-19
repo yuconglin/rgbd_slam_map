@@ -30,13 +30,22 @@ class Map
 {
 public:
     typedef shared_ptr<Map> Ptr;
-    unordered_map<unsigned long, MapPoint::Ptr >  map_points_;        // all landmarks
-    unordered_map<unsigned long, Frame::Ptr >     keyframes_;         // all key-frames
+    // all landmarks
+    unordered_map<unsigned long, MapPoint::Ptr >  map_points_;       // all key-frames 
+    unordered_map<unsigned long, Frame::Ptr >     keyframes_;   
+    // reference_map_points_     
+    unordered_map<unsigned long, MapPoint::Ptr > reference_map_points_;
 
     Map() {}
     
     void insertKeyFrame( Frame::Ptr frame );
     void insertMapPoint( MapPoint::Ptr map_point );
+    void UpdateReferenceMap(Frame::Ptr frame, double ratio_);
+
+    mutex mutex_map_;
+protected:
+    //mutex mutex_map_update_;
+    
 };
 }
 

@@ -25,6 +25,8 @@
 #include "myslam/ORBextractor.h"
 #include "myslam/pnpsolver.h"
 
+#include "myslam/localmapping.h"
+
 #include <mutex>
 #include <thread>
 #include <fstream>
@@ -33,6 +35,7 @@
 
 namespace myslam 
 {
+
 class Tracking
 {
 public:
@@ -43,9 +46,10 @@ public:
         LOST
     };
     
+    LocalMapping* local_mapping_;
+
     TrackState     state_;     // current VO status
     Map::Ptr    map_;       // map with all frames and map points
-    Map::Ptr    local_map_; // only a local map
     PnPSolver::Ptr pnpsolver_;
     
     Frame::Ptr  ref_;       // reference key-frame 
@@ -84,6 +88,9 @@ public: // functions
     ~Tracking();
     
     bool addFrame( Frame::Ptr frame );      // add a new frame 
+    inline void setLocalMapping( LocalMapping* local_mapping) {
+      local_mapping_ = local_mapping;
+    };
     
 protected:  
     // inner operation 
