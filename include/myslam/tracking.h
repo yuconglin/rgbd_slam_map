@@ -87,7 +87,9 @@ public: // functions
     Tracking();
     ~Tracking();
     
-    bool addFrame( Frame::Ptr frame );      // add a new frame 
+    bool addFrame( Frame::Ptr frame );      // add a new frame
+    bool addFrame(const cv::Mat &color, const cv::Mat &depth, const double timestamp, Camera::Ptr camera);
+
     inline void setLocalMapping( LocalMapping* local_mapping) {
       local_mapping_ = local_mapping;
     };

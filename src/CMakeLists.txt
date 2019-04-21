@@ -9,6 +9,7 @@ add_library( myslam SHARED
     ORBextractor.cc
     pnpsolver.cpp
     localmapping.cpp
+    system.cpp
 )
 
 target_link_libraries( myslam

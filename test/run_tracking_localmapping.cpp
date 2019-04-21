@@ -23,7 +23,7 @@ int main ( int argc, char** argv )
     myslam::Map::Ptr map(new myslam::Map);
    
     myslam::Tracking::Ptr tracking ( new myslam::Tracking(map) );
-    myslam::LocalMapping::Ptr localmapping(new myslam::LocalMapping());
+    myslam::LocalMapping::Ptr localmapping(new myslam::LocalMapping(map));
 
     tracking->setLocalMapping(localmapping.get());
     //tracking->setLocalMapping(new myslam::LocalMapping);

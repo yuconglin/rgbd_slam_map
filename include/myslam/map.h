@@ -41,6 +41,7 @@ public:
     void insertKeyFrame( Frame::Ptr frame );
     void insertMapPoint( MapPoint::Ptr map_point );
     void UpdateReferenceMap(Frame::Ptr frame, double ratio_);
+    void insertReferenceMapPoint(MapPoint::Ptr map_point);
 
     mutex mutex_map_;
 protected:

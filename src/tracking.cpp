@@ -136,6 +136,37 @@ bool Tracking::addFrame ( Frame::Ptr frame )
     return true;
 }
 
+bool Tracking::addFrame(const cv::Mat &color, const cv::Mat &depth, const double timestamp, Camera::Ptr camera)
+{
+    myslam::Frame::Ptr pFrame = myslam::Frame::createFrame();
+    pFrame->camera_ = camera;
+    pFrame->color_ = color;
+    pFrame->depth_ = depth;
+    pFrame->time_stamp_ = timestamp;
+
+    boost::timer timer;
+    addFrame(pFrame);
+    cout << "Tracking costs time: " << timer.elapsed() << endl;
+
+    if (state_ == myslam::Tracking::LOST)
+        return false;
+    SE3 Twc = pFrame->T_c_w_.inverse();
+
+    // show the map and the camera pose
+
+    Mat img_show = color.clone();
+    for (auto &p : map_->reference_map_points_)
+    {
+        Vector2d pixel = pFrame->camera_->world2pixel(p.second->pos_, pFrame->T_c_w_);
+        cv::circle(img_show, cv::Point2f(pixel(0, 0), pixel(1, 0)), 5, cv::Scalar(0, 255, 0), 2);
+    }
+
+    cv::imshow("image", img_show);
+    cv::waitKey(1);
+
+    cout << endl;
+}
+
 void Tracking::extractKeyPoints()
 {
     boost::timer timer;
@@ -283,7 +314,7 @@ void Tracking::poseEstimationPnP()
     << ' ' << quat.w() << '\n';
     // points
     {
-        //unique_lock<mutex> lck(map_->mutex_map_);
+        unique_lock<mutex> lck(map_->mutex_map_);
         for (int i = 0; i < inliersIndex.size(); i++)
         {
             g2o::VertexSBAPointXYZ *point = static_cast<g2o::VertexSBAPointXYZ *>(optimizer.vertex(i + 1));
@@ -329,7 +360,7 @@ bool Tracking::checkKeyFrame()
 void Tracking::addKeyFrame()
 {
     {
-        //unique_lock<mutex> lck(map_->mutex_map_);
+        unique_lock<mutex> lck(map_->mutex_map_);
         if (map_->keyframes_.empty())
         {
             // first key-frame, add all 3d points into map
@@ -345,25 +376,43 @@ void Tracking::addKeyFrame()
                 MapPoint::Ptr map_point = MapPoint::createMapPoint(
                     p_world, n, descriptors_curr_.row(i).clone(), curr_.get());
                 map_->insertMapPoint(map_point);
-                curr_->map_points_.push_back(map_point.get());
+                map_->insertReferenceMapPoint(map_point);
+                curr_->AddMapPoint(map_point.get());
             }
         }
         map_->insertKeyFrame(curr_);
     }
     ref_ = curr_;
-    local_mapping_->InsertKeyFrame(curr_);
-}
+    if (local_mapping_->AcceptKeyFrame()) 
+    {
+      local_mapping_->InsertKeyFrame(curr_);
+    }
+}  
 
 void Tracking::addMapPoints()
 {
     // add the new map points into map
-    vector<bool> matched(keypoints_curr_.size(), false); 
+    //vector<bool> matched(keypoints_curr_.size(), false); 
+    unordered_map<int, int> record;
+    /*
     for ( int index:match_2dkp_index_ )
         matched[index] = true;
+    */
+    for (int i = 0; i < match_2dkp_index_.size(); ++ i)
     {
-        //unique_lock<mutex> lck(map_mutex);
+        record[ match_2dkp_index_[i] ] = i;
+    }
+    bool add_reference_map = (match_2dkp_index_.size() < 100);
+
+    {
+        unique_lock<mutex> lck(map_->mutex_map_);
         for (int i = 0; i < keypoints_curr_.size(); ++ i)
         {
+            if (record.count(i)) {
+                curr_->AddMapPoint(match_3dpts_[record[i]].get());
+                match_3dpts_[record[i]]->AddObservationFrame(curr_.get());
+                continue;
+            }
             double d = ref_->findDepth(keypoints_curr_[i]);
             if (d < 0) {
                 continue;
@@ -375,10 +424,10 @@ void Tracking::addMapPoints()
             n.normalize();
             MapPoint::Ptr map_point = MapPoint::createMapPoint(
                 p_world, n, descriptors_curr_.row(i).clone(), curr_.get());
-            if (!matched[i]) {
-                map_->insertMapPoint(map_point);
-            }
-            curr_->map_points_.push_back(map_point.get());
+          
+            map_->insertMapPoint(map_point);
+            if (add_reference_map) map_->insertReferenceMapPoint(map_point);
+            curr_->AddMapPoint(map_point.get());
         }
     }
 }

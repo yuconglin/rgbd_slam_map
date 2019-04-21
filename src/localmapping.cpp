@@ -5,16 +5,39 @@
 namespace myslam
 {
 
-LocalMapping::LocalMapping() : abort_ba_(false)
+LocalMapping::LocalMapping(Map::Ptr map) : abort_ba_(false), map_(map) 
 {
   min_shared_mappoints_ = Config::get<int> ( "min_shared_mappoints" );
 }
 
+void LocalMapping::Run()
+{
+
+}
+
+bool LocalMapping::AcceptKeyFrame()
+{
+  unique_lock<mutex> lock(mutex_accept_keyframe_);
+  return accept_keyframe_;
+}
+
+void LocalMapping::SetAcceptKeyFrame(bool flag)
+{
+  unique_lock<mutex> lock(mutex_accept_keyframe_);
+  accept_keyframe_ = flag;
+}
+
 void LocalMapping::InsertKeyFrame(Frame::Ptr frame)
 {
-  //unique_lock<mutex> lock(mutex_new_frames_);
+  unique_lock<mutex> lock(mutex_new_frames_);
   new_keyframes_.push_back(frame);
   abort_ba_ = true;
+}
+
+bool LocalMapping::CheckNewKeyframes()
+{
+  unique_lock<mutex> lock(mutex_new_frames_);
+  return (!new_keyframes_.empty());
 }
 
 void LocalMapping::ProcessKeyFrame(Frame::Ptr fm)

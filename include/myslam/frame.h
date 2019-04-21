@@ -58,6 +58,10 @@ public: // data members
     
     // check if a point is in this frame 
     bool isInFrame( const Vector3d& pt_world );
+
+    inline void AddMapPoint(MapPoint* mp) {
+      map_points_.push_back(mp);   
+    };
 };
 
 }

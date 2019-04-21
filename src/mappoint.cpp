@@ -53,6 +53,11 @@ MapPoint::Ptr MapPoint::createMapPoint (
     );
 }
 
+void MapPoint::AddObservationFrame(Frame* frame)
+{
+    observed_frames_.push_back(frame);
+}
+
 unsigned long MapPoint::factory_id_ = 0;
 
 }

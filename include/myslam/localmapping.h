@@ -13,14 +13,18 @@ public:
   typedef shared_ptr<LocalMapping> Ptr;
   typedef map< Frame::Ptr, vector< pair<int, Frame::Ptr> > >::iterator large_interator;
 
-  LocalMapping();  
-  Map::Ptr map_;
-
+  LocalMapping(Map::Ptr map);  
+  void Run();
   void InsertKeyFrame(Frame::Ptr frame);
+  bool CheckNewKeyframes();
+
+  bool AcceptKeyFrame();
+  void SetAcceptKeyFrame(bool flag);
 
 protected:
   void ProcessKeyFrame(Frame::Ptr frame);
-
+  //map
+  Map::Ptr map_;
   //local connected graph between key frames.
   //frame_id, <frame_id, frame>
   map< Frame::Ptr, vector< pair<int, Frame::Ptr> > > graph_; 
@@ -35,6 +39,9 @@ protected:
   list<Frame::Ptr> new_keyframes_;
   //corresponding mutex
   mutex mutex_new_frames_;
+
+  bool accept_keyframe_;
+  mutex mutex_accept_keyframe_;
 
   bool abort_ba_;
 };
