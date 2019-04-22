@@ -1,0 +1,56 @@
+%YAML:1.0
+# data
+# the tum dataset directory, change it to yours! 
+#dataset_dir: /home/xiang/dataset/rgbd_dataset_freiburg1_desk
+#dataset_dir: /home/ylin67/Documents/slam_data/rgbd/rgbd_dataset_freiburg2_pioneer_slam3/rgbd_dataset_freiburg2_pioneer_slam3
+dataset_dir: /home/ylin67/Documents/slam_data/rgbd/rgbd_dataset_freiburg3_long_office_household
+
+# camera intrinsics
+# fr1
+#camera.fx: 517.3
+#camera.fy: 516.5
+#camera.cx: 325.1
+#camera.cy: 249.7
+
+# pioneer
+camera.fx: 525.0
+camera.fy: 525.0
+camera.cx: 319.5
+camera.cy: 239.5
+
+camera.d0: 0.2312
+camera.d1: 0.7849
+camera.d2: 0.0033
+camera.d3: -0.0001
+camera.d4: 0.9172
+
+camera.depth_scale: 5000
+camera.th_depth: 1600
+
+# VO paras
+number_of_features: 300
+scale_factor: 1.2
+level_pyramid: 4
+ini_fast_thres: 20
+min_fast_thres: 8
+match_ratio: 0.8
+max_num_lost: 10
+min_inliers: 10
+keyframe_rotation: 0.1
+keyframe_translation: 0.1
+
+# pnp match
+min_inlier: 10
+min_match: 30
+
+# trajectory saving
+trajectory_file: /home/ylin67/learning_slam/rgbd_slam_map/trajectory_tracking.txt
+
+min_shared_mappoints: 15
+
+#orb_features=300
+#orb_scale=1.2
+#orb_levels=4
+#orb_iniThFAST=20
+#orb_minThFAST=8
+#knn_match_ratio=0.8

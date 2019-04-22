@@ -12,7 +12,15 @@ LocalMapping::LocalMapping(Map::Ptr map) : abort_ba_(false), map_(map)
 
 void LocalMapping::Run()
 {
-
+  finished_ = false;
+  while (true)
+  {
+    SetAcceptKeyFrame(false);
+    if (CheckNewKeyframes()) 
+    {
+       ProcessKeyFrame();
+    }
+  }
 }
 
 bool LocalMapping::AcceptKeyFrame()
@@ -40,9 +48,16 @@ bool LocalMapping::CheckNewKeyframes()
   return (!new_keyframes_.empty());
 }
 
-void LocalMapping::ProcessKeyFrame(Frame::Ptr fm)
+void LocalMapping::ProcessKeyFrame()
 {
-   vector<MapPoint*> mappoints = fm->map_points_;
+
+  {
+    unique_lock<mutex> lock(mutex_new_frames_);
+    new_kf_ = new_keyframes_.front();
+    new_keyframes_.pop_front();
+  }
+
+   vector<MapPoint*> mappoints = new_kf_->map_points_;
    for (large_interator it = graph_.begin(); it != graph_.end(); ++ it)
    {
      Frame::Ptr frame = it->first;
@@ -54,8 +69,8 @@ void LocalMapping::ProcessKeyFrame(Frame::Ptr fm)
        }
      }
      if (count > min_shared_mappoints_) {
-       graph_[fm].emplace_back(count, frame);
-       graph_[frame].emplace_back(count, fm);
+       graph_[new_kf_].emplace_back(count, frame);
+       graph_[frame].emplace_back(count, new_kf_);
      }
    }
 }

@@ -22,7 +22,7 @@ public:
   void SetAcceptKeyFrame(bool flag);
 
 protected:
-  void ProcessKeyFrame(Frame::Ptr frame);
+  void ProcessKeyFrame();
   //map
   Map::Ptr map_;
   //local connected graph between key frames.
@@ -37,6 +37,7 @@ protected:
 
   //potential keyframes to add
   list<Frame::Ptr> new_keyframes_;
+  Frame::Ptr new_kf_;
   //corresponding mutex
   mutex mutex_new_frames_;
 
@@ -44,6 +45,7 @@ protected:
   mutex mutex_accept_keyframe_;
 
   bool abort_ba_;
+  bool finished_;
 };
 
 } //namespace end

@@ -63,6 +63,7 @@ public:
     cv::FlannBasedMatcher   matcher_flann_;     // flann matcher
     vector<MapPoint::Ptr>   match_3dpts_;       // matched 3d points 
     vector<int>             match_2dkp_index_;  // matched 2d pixels (index of kp_curr)
+    unordered_map<int, int> match_kpi_mpi_; // matched 2d pixels index and created MapPoint index
    
     SE3 T_c_w_estimated_;    // the estimated pose of current frame 
     int num_inliers_;        // number of inlier features in icp
@@ -99,10 +100,10 @@ protected:
     void extractKeyPoints();
     void featureMatching();
     void poseEstimationPnP(); 
-    void optimizeMap();
+    void optimizeMap(bool key);
     
     void addKeyFrame();
-    void addMapPoints();
+    void addMapPoints(bool key);
     bool checkEstimatedPose(); 
     bool checkKeyFrame();
     
