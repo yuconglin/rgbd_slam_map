@@ -40,6 +40,15 @@ public:
     std::vector<cv::KeyPoint>      keypoints_;  // key points in image
     std::vector<MapPoint*>         map_points_; // associated map points
     bool                           is_key_frame_;  // whether a key-frame
+
+    // scale pyramid info
+    int mnScaleLevels;
+    float mfScaleFactor;
+    float mfLogScaleFactor;
+    vector<float> mvScaleFactors;
+    vector<float> mvInvScaleFactors;
+    vector<float> mvLevelSigma2;
+    vector<float> mvInvLevelSigma2;
     
 public: // data members 
     Frame();

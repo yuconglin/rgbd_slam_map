@@ -19,9 +19,25 @@ void LocalMapping::Run()
     if (CheckNewKeyframes()) 
     {
        ProcessKeyFrame();
+
+       abort_ba_ = false;
+       if (!CheckNewKeyframes() && !stopRequested())
+       {
+         // local ba
+         if (map_->keyframes_.size() > 2)
+         {
+
+         }
+       }
     }
   }
 }
+/*
+bool LocalMapping::LocalBA()
+{
+
+}
+*/
 
 bool LocalMapping::AcceptKeyFrame()
 {
@@ -101,7 +117,7 @@ bool LocalMapping::isStopped()
   return stopped_;
 }
 
-bool LocalMapping::stopRequrested()
+bool LocalMapping::stopRequested()
 {
   unique_lock<mutex> lock(mutex_stop_);
   return stop_requested_;

@@ -108,6 +108,7 @@ protected:
     bool checkKeyFrame();
     
     double getViewAngle( Frame::Ptr frame, MapPoint::Ptr point );
+    int optimizePose(const vector<cv::Point3f>& pts3d, const vector<cv::Point2f>& pts2d, vector<int>& inliersIndex);
     
     //mutex map_mutex;
     mutex mutex_cout_;

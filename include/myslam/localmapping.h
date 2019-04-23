@@ -24,7 +24,7 @@ public:
   void RequestStop();
   bool Stop();
   bool isStopped();
-  bool stopRequrested();
+  bool stopRequested();
 
 protected:
   void ProcessKeyFrame();

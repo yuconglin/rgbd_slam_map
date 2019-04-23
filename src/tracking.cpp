@@ -22,20 +22,13 @@
 #include <opencv2/calib3d/calib3d.hpp>
 #include <algorithm>
 #include <iomanip>
+#include <cmath>
 #include <boost/timer.hpp>
-
-#include <g2o/core/base_vertex.h>
-#include <g2o/core/base_unary_edge.h>
-#include <g2o/core/block_solver.h>
-#include <g2o/core/optimization_algorithm_levenberg.h>
-#include <g2o/types/sba/types_six_dof_expmap.h>
-#include <g2o/solvers/dense/linear_solver_dense.h>
-#include <g2o/core/robust_kernel.h>
-#include <g2o/core/robust_kernel_impl.h>
 
 #include "myslam/config.h"
 #include "myslam/tracking.h"
 #include "myslam/printthread.h"
+#include "myslam/g2o_types.h"
 
 namespace myslam
 {
@@ -147,6 +140,14 @@ bool Tracking::addFrame(const cv::Mat &color, const cv::Mat &depth, const double
     pFrame->color_ = color;
     pFrame->depth_ = depth;
     pFrame->time_stamp_ = timestamp;
+    // scale pyramid info
+    pFrame->mnScaleLevels = orb_->GetLevels();
+    pFrame->mfScaleFactor = orb_->GetScaleFactor();
+    pFrame->mfLogScaleFactor = log(pFrame->mfScaleFactor);
+    pFrame->mvScaleFactors = orb_->GetScaleFactors();
+    pFrame->mvInvScaleFactors = orb_->GetInverseScaleFactors();
+    pFrame->mvLevelSigma2 = orb_->GetScaleSigmaSquares();
+    pFrame->mvInvLevelSigma2 = orb_->GetInverseScaleSigmaSquares();
 
     boost::timer timer;
     addFrame(pFrame);
@@ -224,6 +225,105 @@ void Tracking::featureMatching()
     PrintThread() << "match cost time: " << timer.elapsed() << endl;
 }
 
+int Tracking::optimizePose(const vector<cv::Point3f>& pts3d, const vector<cv::Point2f>& pts2d, vector<int>& inliersIndex)
+{
+    // using bundle adjustment to optimize the pose
+    typedef g2o::BlockSolver<g2o::BlockSolverTraits<6,2>> Block;
+    Block::LinearSolverType* linearSolver = new g2o::LinearSolverDense<Block::PoseMatrixType>();
+    Block* solver_ptr = new Block ( linearSolver );
+    g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg ( solver_ptr );
+    g2o::SparseOptimizer optimizer;
+    optimizer.setAlgorithm ( solver );
+
+    g2o::VertexSE3Expmap* pose = new g2o::VertexSE3Expmap();
+    pose->setId ( 0 );
+    optimizer.addVertex ( pose );
+
+    const float delta = sqrt(5.991);
+    vector<EdgeProjectXYZ2UVPoseOnly*> vpEdges;
+    vector<size_t> vpEdgeIndex;
+    vector<bool> outlier(inliersIndex.size(), false);
+    // edges
+    for ( int i=0; i<inliersIndex.size(); i++ )
+    {
+        int index = inliersIndex[i];
+        // 3D -> 2D projection
+        EdgeProjectXYZ2UVPoseOnly* edge = new EdgeProjectXYZ2UVPoseOnly();
+        edge->setId ( i );
+        edge->setVertex ( 0, pose );
+        edge->camera_ = curr_->camera_.get();
+        edge->point_ = Vector3d ( pts3d[index].x, pts3d[index].y, pts3d[index].z );
+        edge->setMeasurement ( Vector2d ( pts2d[index].x, pts2d[index].y ) );
+        const float invSigma2 = curr_->mvInvLevelSigma2[ keypoints_curr_[index].octave ];
+        edge->setInformation ( Eigen::Matrix2d::Identity()*invSigma2 );
+        g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
+        edge->setRobustKernel(rk);
+        rk->setDelta(delta);
+        optimizer.addEdge ( edge );
+
+        vpEdges.push_back(edge);
+        vpEdgeIndex.push_back(i);
+        // set the inlier map points 
+        match_3dpts_[index]->matched_times_++;
+    }
+    // optimization
+    int nBad = 0;
+    for (int it = 0; it < 4; it ++)
+    {
+        pose->setEstimate(g2o::SE3Quat(
+            T_c_w_estimated_.rotation_matrix(), T_c_w_estimated_.translation()));
+        optimizer.initializeOptimization(0);
+        optimizer.optimize(10);
+        
+        nBad = 0;
+        for (int i = 0, iend = vpEdges.size(); i < iend; ++ i)
+        {
+            EdgeProjectXYZ2UVPoseOnly* e = vpEdges[i];
+            const size_t idx = vpEdgeIndex[i];
+            if (outlier[idx]) 
+            {
+                e->computeError();
+            }
+            const float chi2 = e->chi2();
+            if (chi2 > delta)
+            {
+                outlier[idx] = true;
+                e->setLevel(1);
+                nBad ++;
+            }
+            else
+            {
+                outlier[idx] = false;
+                e->setLevel(0);
+            }
+            if (it == 2) 
+            {
+                e->setRobustKernel(nullptr);
+            }
+        }
+        if(optimizer.edges().size()<10)
+        {
+            break;
+        }
+    }
+
+    // recover results
+    // pose
+    T_c_w_estimated_ = SE3(
+        pose->estimate().rotation(),
+        pose->estimate().translation());
+
+    Vector3d trans = T_c_w_estimated_.translation();
+    Quaterniond quat = T_c_w_estimated_.unit_quaternion();
+    output_file << fixed << std::setprecision(4)
+                << curr_->time_stamp_
+                << ' ' << trans(0) << ' ' << trans(1) << ' ' << trans(2)
+                << ' ' << quat.x() << ' ' << quat.y() << ' ' << quat.z()
+                << ' ' << quat.w() << '\n';
+
+    return inliersIndex.size() - nBad;
+}
+
 void Tracking::poseEstimationPnP()
 {
     boost::timer timer;
@@ -245,86 +345,9 @@ void Tracking::poseEstimationPnP()
     vector<int> inliersIndex;
     pnpsolver_->solvePnP(pts2d, pts3d, curr_->camera_, inliersIndex, T_c_w_estimated_);
     num_inliers_ = inliersIndex.size();
-
-    // using bundle adjustment to optimize the pose
-    typedef g2o::BlockSolver<g2o::BlockSolverTraits<6, 3>> Block;
-    Block::LinearSolverType *linearSolver = new g2o::LinearSolverDense<Block::PoseMatrixType>();
-    Block *solver_ptr = new Block(linearSolver);
-    g2o::OptimizationAlgorithmLevenberg *solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
-    g2o::SparseOptimizer optimizer;
-    optimizer.setAlgorithm(solver);
-
-    // parameter: camera intrinsics
-    g2o::CameraParameters *camera = new g2o::CameraParameters(
-        curr_->camera_->fx_, Eigen::Vector2d(curr_->camera_->cx_, curr_->camera_->cy_), 0);
-    camera->setId(0);
-    optimizer.addParameter(camera);
-
-    // vertex for pose
-    g2o::VertexSE3Expmap *pose = new g2o::VertexSE3Expmap();
-    pose->setId(0);
-    pose->setEstimate(g2o::SE3Quat(
-        T_c_w_estimated_.rotation_matrix(), T_c_w_estimated_.translation()));
-    optimizer.addVertex(pose);
-
-    // vertex for points
-    for (int i = 0; i < inliersIndex.size(); i++)
-    {
-        g2o::VertexSBAPointXYZ *point = new g2o::VertexSBAPointXYZ();
-        point->setId(i + 1);
-        int index = inliersIndex[i];
-        cv::Point3f p = pts3d[index];
-        point->setEstimate(Eigen::Vector3d(p.x, p.y, p.z));
-        point->setMarginalized(true);
-        optimizer.addVertex(point);
-    }
-
-    // edges
-    for (int i = 0; i < inliersIndex.size(); i++)
-    {
-        int index = inliersIndex[i];
-        // 3D -> 2D projection
-        g2o::EdgeProjectXYZ2UV *edge = new g2o::EdgeProjectXYZ2UV();
-        edge->setId(i);
-        edge->setVertex(0, dynamic_cast<g2o::VertexSBAPointXYZ *>(optimizer.vertex(i + 1)));
-        edge->setVertex(1, pose);
-        edge->setMeasurement(Vector2d(pts2d[index].x, pts2d[index].y));
-        edge->setParameterId(0, 0);
-        edge->setInformation(Eigen::Matrix2d::Identity());
-        optimizer.addEdge(edge);
-        // set the inlier map points
-        match_3dpts_[index]->matched_times_++;
-    }
-
-    optimizer.initializeOptimization();
-    optimizer.optimize(10);
-
-    // recover results
-    // pose
-    T_c_w_estimated_ = SE3(
-        pose->estimate().rotation(),
-        pose->estimate().translation());
-
-    Vector3d trans = T_c_w_estimated_.translation();
-    Quaterniond quat = T_c_w_estimated_.unit_quaternion();
-    output_file << fixed << std::setprecision(4)
-                << curr_->time_stamp_
-                << ' ' << trans(0) << ' ' << trans(1) << ' ' << trans(2)
-                << ' ' << quat.x() << ' ' << quat.y() << ' ' << quat.z()
-                << ' ' << quat.w() << '\n';
-    // points
-    {
-        unique_lock<mutex> lck(map_->mutex_map_);
-        for (int i = 0; i < inliersIndex.size(); i++)
-        {
-            g2o::VertexSBAPointXYZ *point = static_cast<g2o::VertexSBAPointXYZ *>(optimizer.vertex(i + 1));
-            Vector3d pt = point->estimate();
-            long id = mappoint_ids[inliersIndex[i]];
-            map_->map_points_[id]->pos_ = pt;
-        }
-    }
-
-    PrintThread() << inliersIndex.size() << " map_points updated\n";
+    int nGood = optimizePose(pts3d, pts2d, inliersIndex);
+    
+    PrintThread() << "inliers pose optimization points: " << nGood << '\n';
     PrintThread() << "pnp estimation cost time: " << timer.elapsed() << endl;
 }
 
