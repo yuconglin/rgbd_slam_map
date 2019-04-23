@@ -1,5 +1,6 @@
 #include "myslam/system.h"
 #include "myslam/config.h"
+#include "myslam/printthread.h"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -39,15 +40,15 @@ int main(int argc, char **argv)
 
   myslam::Camera::Ptr camera(new myslam::Camera);
 
-  cout << "read total " << rgb_files.size() << " entries" << endl;
+  PrintThread() << "read total " << rgb_files.size() << " entries" << endl;
   for (int i = 0; i < rgb_files.size(); i++)
   {
-    cout << "****** loop " << i << " ******" << endl;
+    PrintThread() << "****** loop " << i << " ******" << endl;
     Mat color = cv::imread(rgb_files[i]);
     Mat depth = cv::imread(depth_files[i], -1);
     if (color.data == nullptr || depth.data == nullptr)
     {
-      cout << "xxxxxxxxxxxxxx no more data xxxxxxxxxxx \n";
+      PrintThread() << "xxxxxxxxxxxxxx no more data xxxxxxxxxxx \n";
       break;
     }
 

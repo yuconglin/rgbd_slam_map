@@ -5,7 +5,7 @@ namespace myslam
 
 System::System()
 {
-  cout << "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx Xiang Gao's rgbd odometry code was built in to a full slam system xxxxxxxxxxxxxxxxxxxxxx\n";
+  cout << "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx Xiang Gao's rgbd odometry code was built into a full slam system xxxxxxxxxxxxxxxxxxxxxx\n";
 
   //Config::setParameterFile ( filename );
 
@@ -24,7 +24,8 @@ System::System()
 
 System::~System()
 {
-
+  localmapping_thread_->join();
+  delete localmapping_thread_;
 }
 
 bool System::Process(const cv::Mat &color, const cv::Mat &depth, const double timestamp, Camera::Ptr camera)

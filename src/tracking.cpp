@@ -35,6 +35,7 @@
 
 #include "myslam/config.h"
 #include "myslam/tracking.h"
+#include "myslam/printthread.h"
 
 namespace myslam
 {
@@ -106,14 +107,14 @@ bool Tracking::addFrame(Frame::Ptr frame)
         if (checkEstimatedPose() == true) // a good estimation
         {
             curr_->T_c_w_ = T_c_w_estimated_;
-            
+
             num_lost_ = 0;
             if (checkKeyFrame() == true) // is a key-frame
             {
                 addKeyFrame();
                 optimizeMap(true);
             }
-            else 
+            else
             {
                 optimizeMap(false);
             }
@@ -131,7 +132,7 @@ bool Tracking::addFrame(Frame::Ptr frame)
     }
     case LOST:
     {
-        cout << "tracking has lost." << endl;
+        PrintThread() << "tracking has lost." << endl;
         break;
     }
     }
@@ -149,7 +150,7 @@ bool Tracking::addFrame(const cv::Mat &color, const cv::Mat &depth, const double
 
     boost::timer timer;
     addFrame(pFrame);
-    cout << "Tracking costs time: " << timer.elapsed() << endl;
+    PrintThread() << "Tracking costs time: " << timer.elapsed() << endl;
 
     if (state_ == myslam::Tracking::LOST)
         return false;
@@ -167,7 +168,7 @@ bool Tracking::addFrame(const cv::Mat &color, const cv::Mat &depth, const double
     cv::imshow("image", img_show);
     cv::waitKey(1);
 
-    cout << endl;
+    PrintThread() << endl;
 }
 
 void Tracking::extractKeyPoints()
@@ -178,7 +179,7 @@ void Tracking::extractKeyPoints()
     cv::cvtColor(gray, gray, CV_RGB2GRAY);
     (*orb_)(gray, cv::Mat(), keypoints_curr_, descriptors_curr_);
 
-    cout << "extract keypoints and descriptor cost time: " << timer.elapsed() << endl;
+    PrintThread() << "extract keypoints and descriptor cost time: " << timer.elapsed() << endl;
 }
 
 void Tracking::featureMatching()
@@ -219,8 +220,8 @@ void Tracking::featureMatching()
             match_2dkp_index_.push_back(m.trainIdx);
         }
     }
-    cout << "good matches: " << match_3dpts_.size() << endl;
-    cout << "match cost time: " << timer.elapsed() << endl;
+    PrintThread() << "good matches: " << match_3dpts_.size() << endl;
+    PrintThread() << "match cost time: " << timer.elapsed() << endl;
 }
 
 void Tracking::poseEstimationPnP()
@@ -303,7 +304,6 @@ void Tracking::poseEstimationPnP()
     T_c_w_estimated_ = SE3(
         pose->estimate().rotation(),
         pose->estimate().translation());
-    //cout<<"T_c_w_estimated_: "<<endl<<T_c_w_estimated_.matrix()<<endl;
 
     Vector3d trans = T_c_w_estimated_.translation();
     Quaterniond quat = T_c_w_estimated_.unit_quaternion();
@@ -323,8 +323,9 @@ void Tracking::poseEstimationPnP()
             map_->map_points_[id]->pos_ = pt;
         }
     }
-    cout << inliersIndex.size() << " map_points updated\n";
-    cout << "pnp estimation cost time: " << timer.elapsed() << endl;
+
+    PrintThread() << inliersIndex.size() << " map_points updated\n";
+    PrintThread() << "pnp estimation cost time: " << timer.elapsed() << endl;
 }
 
 bool Tracking::checkEstimatedPose()
@@ -332,7 +333,7 @@ bool Tracking::checkEstimatedPose()
     // check if the estimated pose is good
     if (num_inliers_ < min_inliers_)
     {
-        cout << "reject because inlier is too small: " << num_inliers_ << endl;
+        PrintThread() << "reject because inlier is too small: " << num_inliers_ << endl;
         return false;
     }
     // if the motion is too large, it is probably wrong
@@ -340,7 +341,7 @@ bool Tracking::checkEstimatedPose()
     Sophus::Vector6d d = T_r_c.log();
     if (d.norm() > 5.0)
     {
-        cout << "reject because motion is too large: " << d.norm() << endl;
+        PrintThread() << "reject because motion is too large: " << d.norm() << endl;
         return false;
     }
     return true;
@@ -429,14 +430,15 @@ void Tracking::addMapPoints(bool key)
 {
     // add the new map points into map
     vector<bool> matched(keypoints_curr_.size(), false);
-    for ( int index : match_2dkp_index_ )
+    for (int index : match_2dkp_index_)
     {
         matched[index] = true;
     }
 
-    for (int i = 0; i < keypoints_curr_.size(); ++ i)
+    for (int i = 0; i < keypoints_curr_.size(); ++i)
     {
-        if (matched[i] || ref_->findDepth(keypoints_curr_[i]) < 0) {
+        if (matched[i] || ref_->findDepth(keypoints_curr_[i]) < 0)
+        {
             continue;
         }
 
@@ -444,8 +446,8 @@ void Tracking::addMapPoints(bool key)
         {
             map_->insertReferenceMapPoint(match_3dpts_[match_kpi_mpi_[i]]);
         }
-        else 
-        {  //create a new mappoint
+        else
+        { //create a new mappoint
             double d = ref_->findDepth(keypoints_curr_[i]);
             if (d < 0)
             {
@@ -469,7 +471,7 @@ void Tracking::optimizeMap(bool key)
     //update reference map points according to current keyframe
     map_->UpdateReferenceMap(curr_, map_point_erase_ratio_);
 
-    if ( match_2dkp_index_.size()<100 )
+    if (match_2dkp_index_.size() < 100)
     {
         addMapPoints(key);
     }
@@ -480,8 +482,9 @@ void Tracking::optimizeMap(bool key)
     }
     else
         map_point_erase_ratio_ = 0.1;
-    cout << "local map points: " << map_->reference_map_points_.size() << endl;
-    cout << "global map points: " << map_->map_points_.size() << '\n';
+
+    PrintThread() << "local map points: " << map_->reference_map_points_.size() << endl;
+    PrintThread() << "global map points: " << map_->map_points_.size() << '\n';
 }
 
 double Tracking::getViewAngle(Frame::Ptr frame, MapPoint::Ptr point)

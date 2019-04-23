@@ -18,8 +18,13 @@ public:
   void InsertKeyFrame(Frame::Ptr frame);
   bool CheckNewKeyframes();
 
+  //thread synch
   bool AcceptKeyFrame();
   void SetAcceptKeyFrame(bool flag);
+  void RequestStop();
+  bool Stop();
+  bool isStopped();
+  bool stopRequrested();
 
 protected:
   void ProcessKeyFrame();
@@ -43,6 +48,11 @@ protected:
 
   bool accept_keyframe_;
   mutex mutex_accept_keyframe_;
+
+  bool stopped_;
+  bool stop_requested_;
+  bool not_stop_;
+  mutex mutex_stop_;
 
   bool abort_ba_;
   bool finished_;

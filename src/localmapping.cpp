@@ -73,6 +73,38 @@ void LocalMapping::ProcessKeyFrame()
        graph_[frame].emplace_back(count, new_kf_);
      }
    }
+
+}
+
+void LocalMapping::RequestStop()
+{
+  unique_lock<mutex> lock(mutex_stop_);
+  stop_requested_ = true;
+  unique_lock<mutex> lock2(mutex_new_frames_);
+  abort_ba_ = true;
+}
+
+bool LocalMapping::Stop()
+{
+  unique_lock<mutex> lock(mutex_stop_);
+  if (stop_requested_ && !not_stop_)
+  {
+    stopped_ = true;
+    cout << "local mapping stopped\n";
+    return true;
+  }
+}
+
+bool LocalMapping::isStopped()
+{
+  unique_lock<mutex> lock(mutex_stop_);
+  return stopped_;
+}
+
+bool LocalMapping::stopRequrested()
+{
+  unique_lock<mutex> lock(mutex_stop_);
+  return stop_requested_;
 }
 
 } // namespace

@@ -109,7 +109,8 @@ protected:
     
     double getViewAngle( Frame::Ptr frame, MapPoint::Ptr point );
     
-    mutex map_mutex;
+    //mutex map_mutex;
+    mutex mutex_cout_;
 
     //writing
     ofstream output_file;
