@@ -36,6 +36,8 @@ protected:
   
   //mappoint_id, count
   //unordered_map< long, long> mappoints_counts_;
+  //recent added mappoints
+  vector<MapPoint*> recent_mappoints_;
   
   //shared mappoints number threshold
   int min_shared_mappoints_;

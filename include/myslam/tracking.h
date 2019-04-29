@@ -106,6 +106,7 @@ protected:
     void addMapPoints(bool key);
     bool checkEstimatedPose(); 
     bool checkKeyFrame();
+    void UpdateReferenceMap();
     
     double getViewAngle( Frame::Ptr frame, MapPoint::Ptr point );
     int optimizePose(const vector<cv::Point3f>& pts3d, const vector<cv::Point2f>& pts2d, vector<int>& inliersIndex);
@@ -115,6 +116,9 @@ protected:
 
     //writing
     ofstream output_file;
+
+    //reference map points
+    unordered_map<unsigned long, MapPoint::Ptr > reference_map_points_;
 };
 }
 

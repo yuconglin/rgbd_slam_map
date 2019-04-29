@@ -77,6 +77,12 @@ Tracking::~Tracking()
     output_file.close();
 }
 
+void Tracking::UpdateReferenceMap()
+{
+    unique_lock<mutex> lock(map_->mutex_map_);
+    reference_map_points_ = map_->reference_map_points_;
+}
+
 bool Tracking::addFrame(Frame::Ptr frame)
 {
     switch (state_)
@@ -94,6 +100,7 @@ bool Tracking::addFrame(Frame::Ptr frame)
     {
         curr_ = frame;
         curr_->T_c_w_ = ref_->T_c_w_;
+        UpdateReferenceMap();
         extractKeyPoints();
         featureMatching();
         poseEstimationPnP();
@@ -105,11 +112,11 @@ bool Tracking::addFrame(Frame::Ptr frame)
             if (checkKeyFrame() == true) // is a key-frame
             {
                 addKeyFrame();
-                optimizeMap(true);
+                //optimizeMap(true);
             }
             else
             {
-                optimizeMap(false);
+                //optimizeMap(false);
             }
         }
         else // bad estimation due to various reasons
@@ -160,7 +167,8 @@ bool Tracking::addFrame(const cv::Mat &color, const cv::Mat &depth, const double
     // show the map and the camera pose
 
     Mat img_show = color.clone();
-    for (auto &p : map_->reference_map_points_)
+
+    for (auto &p : reference_map_points_)
     {
         Vector2d pixel = pFrame->camera_->world2pixel(p.second->pos_, pFrame->T_c_w_);
         cv::circle(img_show, cv::Point2f(pixel(0, 0), pixel(1, 0)), 5, cv::Scalar(0, 255, 0), 2);
@@ -190,7 +198,8 @@ void Tracking::featureMatching()
     // select the candidates in map
     Mat desp_map;
     vector<MapPoint::Ptr> candidate;
-    for (auto &p : map_->reference_map_points_)
+
+    for (auto &p : reference_map_points_)
     {
         // check if p in curr frame image
         if (curr_->isInFrame(p.second->pos_))
@@ -225,62 +234,62 @@ void Tracking::featureMatching()
     PrintThread() << "match cost time: " << timer.elapsed() << endl;
 }
 
-int Tracking::optimizePose(const vector<cv::Point3f>& pts3d, const vector<cv::Point2f>& pts2d, vector<int>& inliersIndex)
+int Tracking::optimizePose(const vector<cv::Point3f> &pts3d, const vector<cv::Point2f> &pts2d, vector<int> &inliersIndex)
 {
     // using bundle adjustment to optimize the pose
-    typedef g2o::BlockSolver<g2o::BlockSolverTraits<6,2>> Block;
-    Block::LinearSolverType* linearSolver = new g2o::LinearSolverDense<Block::PoseMatrixType>();
-    Block* solver_ptr = new Block ( linearSolver );
-    g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg ( solver_ptr );
+    typedef g2o::BlockSolver<g2o::BlockSolverTraits<6, 2>> Block;
+    Block::LinearSolverType *linearSolver = new g2o::LinearSolverDense<Block::PoseMatrixType>();
+    Block *solver_ptr = new Block(linearSolver);
+    g2o::OptimizationAlgorithmLevenberg *solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
     g2o::SparseOptimizer optimizer;
-    optimizer.setAlgorithm ( solver );
+    optimizer.setAlgorithm(solver);
 
-    g2o::VertexSE3Expmap* pose = new g2o::VertexSE3Expmap();
-    pose->setId ( 0 );
-    optimizer.addVertex ( pose );
+    g2o::VertexSE3Expmap *pose = new g2o::VertexSE3Expmap();
+    pose->setId(0);
+    optimizer.addVertex(pose);
 
     const float delta = sqrt(5.991);
-    vector<EdgeProjectXYZ2UVPoseOnly*> vpEdges;
+    vector<EdgeProjectXYZ2UVPoseOnly *> vpEdges;
     vector<size_t> vpEdgeIndex;
     vector<bool> outlier(inliersIndex.size(), false);
     // edges
-    for ( int i=0; i<inliersIndex.size(); i++ )
+    for (int i = 0; i < inliersIndex.size(); i++)
     {
         int index = inliersIndex[i];
         // 3D -> 2D projection
-        EdgeProjectXYZ2UVPoseOnly* edge = new EdgeProjectXYZ2UVPoseOnly();
-        edge->setId ( i );
-        edge->setVertex ( 0, pose );
+        EdgeProjectXYZ2UVPoseOnly *edge = new EdgeProjectXYZ2UVPoseOnly();
+        edge->setId(i);
+        edge->setVertex(0, pose);
         edge->camera_ = curr_->camera_.get();
-        edge->point_ = Vector3d ( pts3d[index].x, pts3d[index].y, pts3d[index].z );
-        edge->setMeasurement ( Vector2d ( pts2d[index].x, pts2d[index].y ) );
-        const float invSigma2 = curr_->mvInvLevelSigma2[ keypoints_curr_[index].octave ];
-        edge->setInformation ( Eigen::Matrix2d::Identity()*invSigma2 );
-        g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
+        edge->point_ = Vector3d(pts3d[index].x, pts3d[index].y, pts3d[index].z);
+        edge->setMeasurement(Vector2d(pts2d[index].x, pts2d[index].y));
+        const float invSigma2 = curr_->mvInvLevelSigma2[keypoints_curr_[index].octave];
+        edge->setInformation(Eigen::Matrix2d::Identity() * invSigma2);
+        g2o::RobustKernelHuber *rk = new g2o::RobustKernelHuber;
         edge->setRobustKernel(rk);
         rk->setDelta(delta);
-        optimizer.addEdge ( edge );
+        optimizer.addEdge(edge);
 
         vpEdges.push_back(edge);
         vpEdgeIndex.push_back(i);
-        // set the inlier map points 
+        // set the inlier map points
         match_3dpts_[index]->matched_times_++;
     }
     // optimization
     int nBad = 0;
-    for (int it = 0; it < 4; it ++)
+    for (int it = 0; it < 4; it++)
     {
         pose->setEstimate(g2o::SE3Quat(
             T_c_w_estimated_.rotation_matrix(), T_c_w_estimated_.translation()));
         optimizer.initializeOptimization(0);
         optimizer.optimize(10);
-        
+
         nBad = 0;
-        for (int i = 0, iend = vpEdges.size(); i < iend; ++ i)
+        for (int i = 0, iend = vpEdges.size(); i < iend; ++i)
         {
-            EdgeProjectXYZ2UVPoseOnly* e = vpEdges[i];
+            EdgeProjectXYZ2UVPoseOnly *e = vpEdges[i];
             const size_t idx = vpEdgeIndex[i];
-            if (outlier[idx]) 
+            if (outlier[idx])
             {
                 e->computeError();
             }
@@ -289,19 +298,19 @@ int Tracking::optimizePose(const vector<cv::Point3f>& pts3d, const vector<cv::Po
             {
                 outlier[idx] = true;
                 e->setLevel(1);
-                nBad ++;
+                nBad++;
             }
             else
             {
                 outlier[idx] = false;
                 e->setLevel(0);
             }
-            if (it == 2) 
+            if (it == 2)
             {
                 e->setRobustKernel(nullptr);
             }
         }
-        if(optimizer.edges().size()<10)
+        if (optimizer.edges().size() < 10)
         {
             break;
         }
@@ -346,7 +355,7 @@ void Tracking::poseEstimationPnP()
     pnpsolver_->solvePnP(pts2d, pts3d, curr_->camera_, inliersIndex, T_c_w_estimated_);
     num_inliers_ = inliersIndex.size();
     int nGood = optimizePose(pts3d, pts2d, inliersIndex);
-    
+
     PrintThread() << "inliers pose optimization points: " << nGood << '\n';
     PrintThread() << "pnp estimation cost time: " << timer.elapsed() << endl;
 }
@@ -383,71 +392,70 @@ bool Tracking::checkKeyFrame()
 
 void Tracking::addKeyFrame()
 {
+    bool map_kf_empty_ = false;
     {
         unique_lock<mutex> lck(map_->mutex_map_);
-        if (map_->keyframes_.empty())
+        map_kf_empty_ = map_->keyframes_.empty();
+    }
+    if (map_kf_empty_)
+    {
+        // first key-frame, add all 3d points into map
+        for (size_t i = 0; i < keypoints_curr_.size(); i++)
         {
-            // first key-frame, add all 3d points into map
-            for (size_t i = 0; i < keypoints_curr_.size(); i++)
-            {
-                double d = curr_->findDepth(keypoints_curr_[i]);
-                if (d < 0)
-                    continue;
-                Vector3d p_world = ref_->camera_->pixel2world(
-                    Vector2d(keypoints_curr_[i].pt.x, keypoints_curr_[i].pt.y), curr_->T_c_w_, d);
-                Vector3d n = p_world - ref_->getCamCenter();
-                n.normalize();
-                MapPoint::Ptr map_point = MapPoint::createMapPoint(
-                    p_world, n, descriptors_curr_.row(i).clone(), curr_.get());
-                map_->insertMapPoint(map_point);
-                map_->insertReferenceMapPoint(map_point);
-                curr_->AddKeyPoint(keypoints_curr_[i]);
-                curr_->AddMapPoint(map_point.get());
-            }
+            double d = curr_->findDepth(keypoints_curr_[i]);
+            if (d < 0)
+                continue;
+            Vector3d p_world = ref_->camera_->pixel2world(
+                Vector2d(keypoints_curr_[i].pt.x, keypoints_curr_[i].pt.y), curr_->T_c_w_, d);
+            Vector3d n = p_world - ref_->getCamCenter();
+            n.normalize();
+            MapPoint::Ptr map_point = MapPoint::createMapPoint(
+                p_world, n, descriptors_curr_.row(i).clone(), curr_.get());
+            map_point->AddObservationFrame(curr_.get(), i);
+            curr_->AddKeyPoint(keypoints_curr_[i]);
+            curr_->AddMapPoint(map_point.get());
         }
-        else
+    }
+    else
+    {
+        match_kpi_mpi_.clear();
+        for (int i = 0; i < match_2dkp_index_.size(); ++i)
         {
-            match_kpi_mpi_.clear();
-            for (int i = 0; i < match_2dkp_index_.size(); ++i)
-            {
-                match_kpi_mpi_[match_2dkp_index_[i]] = i;
-            }
-
-            for (int i = 0; i < keypoints_curr_.size(); ++i)
-            {
-                if (match_kpi_mpi_.count(i))
-                {
-                    curr_->AddMapPoint(match_3dpts_[match_kpi_mpi_[i]].get());
-                    match_3dpts_[match_kpi_mpi_[i]]->AddObservationFrame(curr_.get());
-                    curr_->AddKeyPoint(keypoints_curr_[i]);
-                    continue;
-                }
-                double d = ref_->findDepth(keypoints_curr_[i]);
-                if (d < 0)
-                {
-                    continue;
-                }
-                Vector3d p_world = ref_->camera_->pixel2world(
-                    Vector2d(keypoints_curr_[i].pt.x, keypoints_curr_[i].pt.y),
-                    curr_->T_c_w_, d);
-                Vector3d n = p_world - ref_->getCamCenter();
-                n.normalize();
-                MapPoint::Ptr map_point = MapPoint::createMapPoint(
-                    p_world, n, descriptors_curr_.row(i).clone(), curr_.get());
-
-                map_->insertMapPoint(map_point);
-                curr_->AddMapPoint(map_point.get());
-                curr_->AddKeyPoint(keypoints_curr_[i]);
-            }
+            match_kpi_mpi_[match_2dkp_index_[i]] = i;
         }
-        map_->insertKeyFrame(curr_);
+
+        for (int i = 0; i < keypoints_curr_.size(); ++i)
+        {
+            if (match_kpi_mpi_.count(i))
+            {
+                curr_->AddMapPoint(match_3dpts_[match_kpi_mpi_[i]].get());
+                match_3dpts_[match_kpi_mpi_[i]]->AddObservationFrame(curr_.get(), i);
+                curr_->AddKeyPoint(keypoints_curr_[i]);
+                continue;
+            }
+            double d = ref_->findDepth(keypoints_curr_[i]);
+            if (d < 0)
+            {
+                continue;
+            }
+            Vector3d p_world = ref_->camera_->pixel2world(
+                Vector2d(keypoints_curr_[i].pt.x, keypoints_curr_[i].pt.y),
+                curr_->T_c_w_, d);
+            Vector3d n = p_world - ref_->getCamCenter();
+            n.normalize();
+            MapPoint::Ptr map_point = MapPoint::createMapPoint(
+                p_world, n, descriptors_curr_.row(i).clone(), curr_.get());
+
+            curr_->AddMapPoint(map_point.get());
+            curr_->AddKeyPoint(keypoints_curr_[i]);
+        }
     }
     ref_ = curr_;
     if (local_mapping_->AcceptKeyFrame())
     {
         local_mapping_->InsertKeyFrame(curr_);
     }
-}
+} // namespace myslam
 
 void Tracking::addMapPoints(bool key)
 {

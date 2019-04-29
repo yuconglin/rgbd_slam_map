@@ -74,6 +74,24 @@ void LocalMapping::ProcessKeyFrame()
   }
 
    vector<MapPoint*> mappoints = new_kf_->map_points_;
+   for (size_t i = 0; i < mappoints.size(); ++ i)
+   {
+     MapPoint* mp = mappoints[i];
+     if (mp && mp->isGood())
+     {
+       if (!new_kf_->isInFrame(mp->pos_))
+       {
+         mp->UpdateNormal();
+         mp->UpdateDescriptors();
+       }
+       else 
+       {
+         recent_mappoints_.push_back(mp);
+       }
+     }
+   }
+
+
    for (large_interator it = graph_.begin(); it != graph_.end(); ++ it)
    {
      Frame::Ptr frame = it->first;

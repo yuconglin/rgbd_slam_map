@@ -95,4 +95,10 @@ bool Frame::isInFrame ( const Vector3d& pt_world )
         && pixel(1,0)<color_.rows;
 }
 
+Mat Frame::GetColorImage()
+{
+    unique_lock<mutex> lock(mutex_color_);
+    return color_;
+}
+
 }

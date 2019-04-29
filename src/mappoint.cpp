@@ -19,6 +19,7 @@
 
 #include "myslam/common_include.h"
 #include "myslam/mappoint.h"
+#include "myslam/frame.h"
 
 namespace myslam
 {
@@ -30,9 +31,9 @@ MapPoint::MapPoint()
 }
 
 MapPoint::MapPoint ( long unsigned int id, const Vector3d& position, const Vector3d& norm, Frame* frame, const Mat& descriptor )
-: id_(id), pos_(position), norm_(norm), good_(true), visible_times_(1), matched_times_(1), descriptor_(descriptor)
+: id_(id), pos_(position), norm_(norm), good_(true), visible_times_(1), matched_times_(1), descriptor_(descriptor), ref_frame_(frame), n_obs_(0)
 {
-    observed_frames_.push_back(frame);
+    
 }
 
 MapPoint::Ptr MapPoint::createMapPoint()
@@ -53,9 +54,52 @@ MapPoint::Ptr MapPoint::createMapPoint (
     );
 }
 
-void MapPoint::AddObservationFrame(Frame* frame)
+void MapPoint::UpdateNormal()
 {
-    observed_frames_.push_back(frame);
+    map<Frame*, size_t> observations;
+    Frame* ref_frame;
+    Vector3d pos;
+    {
+        unique_lock<mutex> lock1(mutex_frames_);
+        unique_lock<mutex> lock2(mutex_pos_);
+        if (!good_) {return;}
+        observations = observed_frames_;
+        ref_frame = ref_frame_;
+        pos = pos_;
+    }
+
+    if (observations.empty()) {return;}
+
+    Vector3d normal;
+    normal.setZero();
+    int n = 0;
+    for (map<Frame*,size_t>::iterator it = observations.begin(); it != observations.end(); it ++)
+    {
+        Frame* KF = it -> first;
+        Vector3d Owi = KF->getCamCenter();
+        Vector3d normali = pos_ - Owi;
+        normal = normal + normali / normali.norm();
+        n ++;
+    }
+
+    Vector3d PC = pos_ - ref_frame->getCamCenter();
+    {
+        unique_lock<mutex> lock3(mutex_pos_);
+        norm_ = normal / n;
+    }
+}
+
+void MapPoint::UpdateDescriptors()
+{
+    
+}
+
+void MapPoint::AddObservationFrame(Frame* frame, size_t idx)
+{
+    unique_lock<mutex> lock(mutex_frames_);
+    if (observed_frames_.count(frame)) {return;}
+    observed_frames_[frame] = idx;
+    n_obs_ ++;
 }
 
 unsigned long MapPoint::factory_id_ = 0;

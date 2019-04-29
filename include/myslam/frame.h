@@ -75,6 +75,12 @@ public: // data members
     inline void AddKeyPoint(cv::KeyPoint pt) {
         keypoints_.push_back(pt);
     }
+
+    Mat GetColorImage();
+
+protected:
+    mutex mutex_color_;
+
 };
 
 }

@@ -37,7 +37,7 @@ public:
     Vector3d    norm_;      // Normal of viewing direction 
     Mat         descriptor_; // Descriptor for matching 
     
-    list<Frame*>    observed_frames_;   // key-frames that can observe this point 
+    int         n_obs_;
 
     int         matched_times_;     // being an inliner in pose estimation
     int         visible_times_;     // being visible in current frame 
@@ -51,7 +51,13 @@ public:
         const Mat& descriptor=Mat() 
     );
 
-    void AddObservationFrame(Frame* frame);
+    void AddObservationFrame(Frame* frame, size_t idx);
+
+    inline bool isGood() {return good_;};
+
+    void UpdateNormal();
+    void UpdateDescriptors();
+    //double dist = norm( descriptor1, descriptor2, NORM_HAMMING);
     
     inline cv::Point3f getPositionCV() const {
         return cv::Point3f( pos_(0,0), pos_(1,0), pos_(2,0) );
@@ -63,6 +69,13 @@ public:
         const Vector3d& norm_,
         const Mat& descriptor,
         Frame* frame );
+
+protected:
+    mutex mutex_frames_;
+    mutex mutex_pos_;
+
+    map<Frame*, size_t>    observed_frames_;   // key-frames that can observe this point, and the keypoint index in that frame
+    Frame* ref_frame_;
 };
 }
 
