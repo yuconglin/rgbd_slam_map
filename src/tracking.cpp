@@ -413,6 +413,7 @@ void Tracking::addKeyFrame()
                 p_world, n, descriptors_curr_.row(i).clone(), curr_.get());
             map_point->AddObservationFrame(curr_.get(), i);
             curr_->AddKeyPoint(keypoints_curr_[i]);
+            curr_->AddDescriptor(descriptors_curr_.row(i));
             curr_->AddMapPoint(map_point.get());
         }
     }
@@ -431,6 +432,7 @@ void Tracking::addKeyFrame()
                 curr_->AddMapPoint(match_3dpts_[match_kpi_mpi_[i]].get());
                 match_3dpts_[match_kpi_mpi_[i]]->AddObservationFrame(curr_.get(), i);
                 curr_->AddKeyPoint(keypoints_curr_[i]);
+                curr_->AddDescriptor(descriptors_curr_.row(i));
                 continue;
             }
             double d = ref_->findDepth(keypoints_curr_[i]);
@@ -445,8 +447,9 @@ void Tracking::addKeyFrame()
             n.normalize();
             MapPoint::Ptr map_point = MapPoint::createMapPoint(
                 p_world, n, descriptors_curr_.row(i).clone(), curr_.get());
-
+            map_point->AddObservationFrame(curr_.get(), i);
             curr_->AddMapPoint(map_point.get());
+            curr_->AddDescriptor(descriptors_curr_.row(i));
             curr_->AddKeyPoint(keypoints_curr_[i]);
         }
     }

@@ -20,6 +20,7 @@
 #include "myslam/common_include.h"
 #include "myslam/mappoint.h"
 #include "myslam/frame.h"
+#include "myslam/utility.h"
 
 namespace myslam
 {
@@ -91,7 +92,64 @@ void MapPoint::UpdateNormal()
 
 void MapPoint::UpdateDescriptors()
 {
+    // retrieve all observed descriptors
+    vector<Mat> vDescriptors;
+    map<Frame*, size_t> observations;
+    {
+        unique_lock<mutex> lock1(mutex_frames_);
+        if (!good_) {return;}
+        observations = observed_frames_;
+    }
+    if (observations.empty()) {return;}
+    vDescriptors.reserve(observations.size());
+
+    for (map<Frame*, size_t>::iterator mit = observations.begin(); mit != observations.end(); mit ++) 
+    {
+        Frame* pF = mit->first;
+        if (pF->isGood()) {
+            vDescriptors.push_back(pF->descriptors_.row(mit->second));
+        }
+    }
+    if (vDescriptors.empty()) {
+        return;
+    }
+    // compute distances between them
+    const size_t N = vDescriptors.size();
+    float Distances[N][N];
+    for (size_t i = 0; i < N; ++ i) 
+    {
+        Distances[i][i] = 0;
+        for (size_t j = i + 1; j < N; ++ j)
+        {
+            int dist_ij = cv::norm(vDescriptors[i], vDescriptors[j],cv::NORM_HAMMING);
+            Distances[i][j] = dist_ij;
+            Distances[j][i] = dist_ij;
+        }
+    }
+    // Take the descriptor with least median distance to the rest
+    float BestMedian = FLT_MAX;
+    int BestIdx = 0;
+    for (size_t i = 0; i < N; ++ i)
+    {
+        vector<float> vDists(Distances[i], Distances[i] + N);
+        float median = utility::GetMedian(vDists);
+        if (median < BestMedian)
+        {
+            BestMedian = median;
+            BestIdx = i;
+        }
+    }
     
+    {
+        unique_lock<mutex> lock(mutex_features_);
+        descriptor_ = vDescriptors[BestIdx].clone();
+    }
+}
+
+Mat MapPoint::GetDescriptor()
+{
+    unique_lock<mutex> lock(mutex_features_);
+    return descriptor_.clone();
 }
 
 void MapPoint::AddObservationFrame(Frame* frame, size_t idx)

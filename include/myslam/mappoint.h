@@ -57,7 +57,7 @@ public:
 
     void UpdateNormal();
     void UpdateDescriptors();
-    //double dist = norm( descriptor1, descriptor2, NORM_HAMMING);
+    Mat GetDescriptor();
     
     inline cv::Point3f getPositionCV() const {
         return cv::Point3f( pos_(0,0), pos_(1,0), pos_(2,0) );
@@ -73,6 +73,7 @@ public:
 protected:
     mutex mutex_frames_;
     mutex mutex_pos_;
+    mutex mutex_features_;
 
     map<Frame*, size_t>    observed_frames_;   // key-frames that can observe this point, and the keypoint index in that frame
     Frame* ref_frame_;

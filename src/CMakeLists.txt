@@ -10,6 +10,7 @@ add_library( myslam SHARED
     pnpsolver.cpp
     localmapping.cpp
     system.cpp
+    utility.cpp
 )
 
 target_link_libraries( myslam

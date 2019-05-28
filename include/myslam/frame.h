@@ -40,6 +40,7 @@ public:
     std::vector<cv::KeyPoint>      keypoints_;  // key points in image
     std::vector<MapPoint*>         map_points_; // associated map points
     bool                           is_key_frame_;  // whether a key-frame
+    Mat                            descriptors_; // descriptors associated with key points in image
 
     // scale pyramid info
     int mnScaleLevels;
@@ -76,11 +77,17 @@ public: // data members
         keypoints_.push_back(pt);
     }
 
+    inline void AddDescriptor(Mat descriptor) {
+        descriptors_.push_back(descriptor);
+    }
+
     Mat GetColorImage();
+
+    inline bool isGood() {return good_;}
 
 protected:
     mutex mutex_color_;
-
+    bool good_;
 };
 
 }
